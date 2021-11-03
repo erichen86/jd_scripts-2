@@ -1,29 +1,30 @@
 /**
- * 京喜app->领88元红包
+ * 京喜->领88元红包
  * 先内部，后助力HW.ts
  * cron: 5 0,6,18 * * *
  */
 
-import {requireConfig, wait, h5st, getBeanShareCode, getFarmShareCode} from "./TS_USER_AGENTS";
-import axios from "axios";
-import {Md5} from "ts-md5";
+import {requireConfig, wait, h5st, getBeanShareCode, getFarmShareCode, getshareCodeHW, randomString} from "./TS_USER_AGENTS"
+import axios from "axios"
+import {Md5} from "ts-md5"
+import {format} from 'date-fns'
 
-let cookie: string = '', res: any = '', UserName: string, index: number, UA: string = '';
-let shareCodesSelf: string[] = [], shareCodes: string[] = [], shareCodesHW: string[] = [];
+const token = require('./utils/jd_jxmc.js').token
+
+let cookie: string = '', res: any = '', UserName: string, index: number, UA: string = ''
+let shareCodesSelf: string[] = [], shareCodes: string[] = [], shareCodesHW: string[] = [], jxToken: any
 
 !(async () => {
-  let except: string[];
-
-  let cookiesArr: any = await requireConfig();
-
+  let cookiesArr: any = await requireConfig()
   for (let i = 0; i < cookiesArr.length; i++) {
-    cookie = cookiesArr[i];
+    cookie = cookiesArr[i]
     UserName = decodeURIComponent(cookie.match(/pt_pin=([^;]*)/)![1])
-    index = i + 1;
-    console.log(`\n开始【京东账号${index}】${UserName}\n`);
+    index = i + 1
+    console.log(`\n开始【京东账号${index}】${UserName}\n`)
+    jxToken = await token(cookie)
 
-    res = await api('GetUserInfo', 'activeId,channel,phoneid,publishFlag,stepreward_jstoken,timestamp,userDraw', {userDraw: 1})
-    let strUserPin: string = res.Data.strUserPin, dwHelpedTimes: number = res.Data.dwHelpedTimes;
+    res = await api('GetUserInfo', 'activeId,channel,phoneid,publishFlag,stepreward_jstoken,timestamp,userDraw', {})
+    let strUserPin: string = res.Data.strUserPin, dwHelpedTimes: number = res.Data.dwHelpedTimes
     console.log('收到助力:', dwHelpedTimes)
     console.log('助力码：', strUserPin)
     shareCodesSelf.push(strUserPin)
@@ -37,21 +38,18 @@ let shareCodesSelf: string[] = [], shareCodes: string[] = [], shareCodesHW: stri
   console.log('内部助力码：', shareCodesSelf)
 
   for (let i = 0; i < cookiesArr.length; i++) {
-    cookie = cookiesArr[i];
+    cookie = cookiesArr[i]
+    jxToken = await token(cookie)
     UserName = decodeURIComponent(cookie.match(/pt_pin=([^;]*)/)![1])
 
-    await getCodesHW()
-    shareCodes = Array.from(new Set([...shareCodesSelf, ...shareCodesHW]))
-    if (shareCodesHW.length !== 0) {
-      console.log('获取随机助力码')
-      res = await getCodesPool();
-      shareCodes = Array.from(new Set([...shareCodes, ...res]))
+    if (shareCodesHW.length === 0) {
+      shareCodesHW = await getshareCodeHW('88hb')
     }
-    console.log('助力排队:', shareCodes)
-
-    for (let j = 0; j < shareCodes.length; j++) {
-      console.log(`账号${i + 1} ${UserName} 去助力 ${shareCodes[j]}`)
-      res = await api('EnrollFriend', 'activeId,channel,joinDate,phoneid,publishFlag,stepreward_jstoken,strPin,timestamp', {joinDate: '20211004', strPin: shareCodes[j]})
+    shareCodes = Array.from(new Set([...shareCodesSelf, ...shareCodesHW]))
+    for (let code of shareCodes) {
+      console.log(`账号 ${UserName} 去助力 ${code}`)
+      res = await api('EnrollFriend', 'activeId,channel,joinDate,phoneid,publishFlag,strPin,timestamp', {joinDate: format(Date.now(), 'yyyyMMdd'), strPin: code})
+      await wait(5000)
       if (res.iRet === 0) {
         console.log('成功')
       } else if (res.iRet === 2015) {
@@ -63,19 +61,19 @@ let shareCodesSelf: string[] = [], shareCodes: string[] = [], shareCodesHW: stri
       } else {
         console.log('其他错误:', res)
       }
-      await wait(5000)
     }
   }
 
   // 拆红包
   for (let i = 0; i < cookiesArr.length; i++) {
-    cookie = cookiesArr[i];
+    cookie = cookiesArr[i]
     UserName = decodeURIComponent(cookie.match(/pt_pin=([^;]*)/)![1])
-    index = i + 1;
-    console.log(`\n开始【京东账号${index}】${UserName} 拆红包\n`);
+    jxToken = await token(cookie)
+    index = i + 1
+    console.log(`\n开始【京东账号${index}】${UserName} 拆红包\n`)
 
     res = await api('GetUserInfo', 'activeId,channel,phoneid,publishFlag,stepreward_jstoken,timestamp,userDraw', {userDraw: 1})
-    let strUserPin: string = res.Data.strUserPin, dwHelpedTimes: number = res.Data.dwHelpedTimes;
+    let strUserPin: string = res.Data.strUserPin, dwHelpedTimes: number = res.Data.dwHelpedTimes
     await wait(2000)
 
     for (let t of res.Data.gradeConfig) {
@@ -105,16 +103,8 @@ interface Params {
 }
 
 async function api(fn: string, stk: string, params: Params = {}) {
-  let url: string = `https://m.jingxi.com/cubeactive/steprewardv3/${fn}?activeId=489177&publishFlag=1&channel=7&_stk=${encodeURIComponent(stk)}&_ste=1&_=${Date.now()}&sceneval=2`
+  let url: string = `https://m.jingxi.com/cubeactive/steprewardv3/${fn}?activeId=525597&publishFlag=1&channel=7&_stk=${encodeURIComponent(stk)}&_ste=1&_=${Date.now()}&sceneval=2&stepreward_jstoken=${jxToken['farm_jstoken']}&timestamp=${jxToken['timestamp']}&phoneid=${jxToken['phoneid']}`
   UA = `jdpingou;iPhone;4.13.0;14.4.2;${randomString(40)};network/wifi;model/iPhone10,2;appBuild/100609;ADID/00000000-0000-0000-0000-000000000000;supportApplePay/1;hasUPPay/0;pushNoticeIsOpen/1;hasOCPay/0;supportBestPay/0;session/${Math.random() * 98 + 1};pap/JA2019_3111789;brand/apple;supportJDSHWK/1;Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148`
-  let phoneid = UA.split(';') && UA.split(';')[4] || ''
-  url += `&phoneid=${phoneid}`
-  url += `&stepreward_jstoken=${
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10)
-  }`
   url = h5st(url, stk, params, 10010)
   try {
     let {data}: any = await axios.get(url, {
@@ -133,46 +123,15 @@ async function api(fn: string, stk: string, params: Params = {}) {
   }
 }
 
-async function getCodesHW() {
-  try {
-    let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/HW_CODES`, {timeout: 10000})
-    console.log('获取HW_CODES成功(api)')
-    shareCodesHW = data['88hb']
-  } catch (e: any) {
-    console.log('获取HW_CODES失败(api)')
-  }
-}
-
-async function getCodesPool() {
-  try {
-    let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/hb88/30`, {timeout: 10000})
-    return data.data
-  } catch (e: any) {
-    console.log('获取助力池出错')
-    return []
-  }
-}
-
 async function makeShareCodes(code: string) {
-  let bean: string = await getBeanShareCode(cookie)
-  let farm: string = await getFarmShareCode(cookie)
-  let pin: string = cookie.match(/pt_pin=([^;]*)/)![1]
-  pin = Md5.hashStr(pin)
   try {
-    let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/autoInsert/hb88?sharecode=${code}&bean=${bean}&farm=${farm}&pin=${pin}`, {timeout: 10000})
-    if (data.code === 200)
-      console.log('自动提交助力码成功')
-    else
-      console.log('自动提交助力码失败！已提交farm的cookie才可提交88hb')
-  } catch (e: any) {
-    console.log('自动提交助力码出错')
+    let bean: string = await getBeanShareCode(cookie)
+    let farm: string = await getFarmShareCode(cookie)
+    let pin: string = Md5.hashStr(cookie.match(/pt_pin=([^;]*)/)![1])
+    let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/autoInsert/hb88?sharecode=${code}&bean=${bean}&farm=${farm}&pin=${pin}`)
+    console.log(data.message)
+  } catch (e) {
+    console.log('自动提交失败')
+    console.log(e)
   }
-}
-
-function randomString(e: number) {
-  e = e || 32;
-  let t = "0123456789abcdef", a = t.length, n = "";
-  for (let i = 0; i < e; i++)
-    n += t.charAt(Math.floor(Math.random() * a));
-  return n
 }

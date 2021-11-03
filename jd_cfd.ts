@@ -7,15 +7,15 @@
  * cron: 0 * * * *
  */
 
-import axios from 'axios';
+import axios from 'axios'
 import {Md5} from 'ts-md5'
-import {getDate} from 'date-fns';
-import {requireConfig, getBeanShareCode, getFarmShareCode, wait, requestAlgo, h5st, getJxToken, getRandomNumberByRange} from './TS_USER_AGENTS';
+import {getDate} from 'date-fns'
+import {requireConfig, wait, requestAlgo, h5st, getJxToken, getRandomNumberByRange, getBeanShareCode, getFarmShareCode} from './TS_USER_AGENTS'
 
 const axi = axios.create({timeout: 10000})
 
-let cookie: string = '', res: any = '', UserName: string, index: number;
-let shareCodes: string[] = [], shareCodesSelf: string[] = [], shareCodesHW: string[] = [], isCollector: Boolean = false, USER_AGENT = 'jdpingou;', token: any = {};
+let cookie: string = '', res: any = '', UserName: string, index: number
+let shareCodes: string[] = [], shareCodesSelf: string[] = [], shareCodesHW: string[] = [], isCollector: Boolean = false, USER_AGENT = 'jdpingou;', token: any = {}
 
 interface Params {
   strBuildIndex?: string,
@@ -66,26 +66,28 @@ interface Params {
   dwPageSize?: number,
   dwProperty?: number,
   bizCode?: string,
+  dwCardType?: number,
+  strCardTypeIndex?: string,
 }
 
 !(async () => {
-  await requestAlgo();
-  let cookiesArr: any = await requireConfig();
+  await requestAlgo()
+  let cookiesArr: any = await requireConfig()
   for (let i = 0; i < cookiesArr.length; i++) {
-    cookie = cookiesArr[i];
+    cookie = cookiesArr[i]
     UserName = decodeURIComponent(cookie.match(/pt_pin=([^;]*)/)![1])
-    index = i + 1;
-    console.log(`\n开始【京东账号${index}】${UserName}\n`);
+    index = i + 1
+    console.log(`\n开始【京东账号${index}】${UserName}\n`)
 
     token = getJxToken(cookie)
     try {
-      await makeShareCodes();
+      await makeShareCodes()
     } catch (e) {
       console.log(e)
     }
 
     // 当日累计获得财富
-    let todayMoney: number = 0, flag: boolean = true;
+    let todayMoney: number = 0, flag: boolean = true
     for (let dwPageIndex = 0; dwPageIndex < 5; dwPageIndex++) {
       if (!flag) break
       res = await api('user/GetMoneyDetail', '_cfd_t,bizCode,dwEnv,dwPageIndex,dwPageSize,dwProperty,dwQueryType,ptag,source,strZone',
@@ -126,6 +128,77 @@ interface Params {
           break
         }
         await wait(2000)
+      }
+    }
+
+    let tasks: any
+    // 加速卡任务
+    tasks = await api('story/GetPropTask', '_cfd_t,bizCode,dwEnv,ptag,source,strZone')
+    for (let t of tasks.Data.TaskList) {
+      if (t.dwCompleteNum === t.dwTargetNum && t.dwAwardStatus === 2) {
+        res = await api('Award', '_cfd_t,bizCode,dwEnv,ptag,source,strZone,taskId', {bizCode: tasks.Data.strZone, taskId: t.ddwTaskId})
+        await wait(1000)
+        if (res.ret === 0) {
+          let prizeInfo: any = JSON.parse(res.data.prizeInfo)
+          let CardList: any = prizeInfo.CardInfo.CardList
+          let cards: string = ''
+          for (let card of CardList) {
+            cards += card.strCardName
+          }
+          console.log('加速卡领取成功', cards)
+        } else {
+          console.log('加速卡领取失败', res)
+          break
+        }
+      }
+      if (t.dwCompleteNum < t.dwTargetNum && t.strTaskName !== '去接待NPC') {
+        console.log(t.strTaskName)
+        res = await api('DoTask', '_cfd_t,bizCode,configExtra,dwEnv,ptag,source,strZone,taskId', {bizCode: tasks.Data.strZone, taskId: t.ddwTaskId})
+        await wait(t.dwLookTime * 1000 ?? 2000)
+        if (res.ret === 0) {
+          console.log('加速卡任务完成')
+        } else {
+          console.log('加速卡任务失败', res)
+          break
+        }
+      }
+    }
+
+    // 加速卡
+    res = await api('user/GetPropCardCenterInfo', '_cfd_t,bizCode,dwEnv,ptag,source,strZone')
+    let richcard: any = res.cardInfo.richcard, coincard: any = res.cardInfo.coincard
+    let coincardUsing = coincard.filter(card => {
+      return card.dwCardState === 2
+    })
+    let richcardUsing = richcard.filter(card => {
+      return card.dwCardState === 2
+    })
+    if (coincardUsing.length === 0) {
+      for (let card of coincard) {
+        if (card.dwIsCanUseNext === 1) {
+          res = await api('user/UsePropCard', '_cfd_t,bizCode,dwCardType,dwEnv,ptag,source,strCardTypeIndex,strZone', {dwCardType: 1, strCardTypeIndex: encodeURIComponent(card.strCardTypeIndex)})
+          if (res.iRet === 0) {
+            console.log('金币加速卡使用成功')
+          } else {
+            console.log('金币加速卡使用失败', res)
+          }
+          break
+        }
+      }
+    }
+    if (richcardUsing.length === 0) {
+      for (let card of richcard) {
+        if (card.dwIsCanUseNext === 1) {
+          for (let j = 0; j < card.dwCardNums; j++) {
+            res = await api('user/UsePropCard', '_cfd_t,bizCode,dwCardType,dwEnv,ptag,source,strCardTypeIndex,strZone', {dwCardType: 2, strCardTypeIndex: encodeURIComponent(card.strCardTypeIndex)})
+            if (res.iRet === 0) {
+              console.log('点券加速卡使用成功')
+            } else {
+              console.log('点券加速卡使用失败', res)
+            }
+            await wait(2000)
+          }
+        }
       }
     }
 
@@ -402,7 +475,6 @@ interface Params {
     await wait(2000)
 
     // 任务➡️
-    let tasks: any
     tasks = await api('story/GetActTask', '_cfd_t,bizCode,dwEnv,ptag,source,strZone')
     await wait(2000)
     for (let t of tasks.Data.TaskList) {
@@ -469,7 +541,7 @@ interface Params {
   }
 
   for (let i = 0; i < cookiesArr.length; i++) {
-    await getCodesHW();
+    await getCodesHW()
     // 获取随机助力码
     try {
       let {data}: any = await axi.get(`https://api.jdsharecode.xyz/api/jxcfd/30`, {timeout: 10000})
@@ -486,7 +558,8 @@ interface Params {
       res = await api('story/helpbystage', '_cfd_t,bizCode,dwEnv,ptag,source,strShareId,strZone', {strShareId: shareCodes[j]})
       if (res.iRet === 0) {
         console.log('助力成功:', res.Data.GuestPrizeInfo.strPrizeName)
-      } else if (res.iRet === 2232 || res.sErrMsg === '今日助力次数达到上限，明天再来帮忙吧~') {
+      } else if (res.iRet === 2190) {
+        console.log('上限')
         break
       } else if (res.iRet === 2191) {
         console.log('已助力')
@@ -500,9 +573,9 @@ interface Params {
 
 function api(fn: string, stk: string, params: Params = {}, taskPosition = '') {
   return new Promise((resolve, reject) => {
-    let url: string;
+    let url: string
     if (['GetUserTaskStatusList', 'Award', 'DoTask'].includes(fn)) {
-      let bizCode: string;
+      let bizCode: string
       if (!params.bizCode) {
         bizCode = taskPosition === 'right' ? 'jxbfddch' : 'jxbfd'
       } else {
@@ -530,7 +603,7 @@ function api(fn: string, stk: string, params: Params = {}, taskPosition = '') {
 
 async function task() {
   console.log('刷新任务列表')
-  res = await api('GetUserTaskStatusList', '_cfd_t,bizCode,dwEnv,ptag,showAreaTaskFlag,source,strZone,taskId', {taskId: 0, showAreaTaskFlag: 1});
+  res = await api('GetUserTaskStatusList', '_cfd_t,bizCode,dwEnv,ptag,showAreaTaskFlag,source,strZone,taskId', {taskId: 0, showAreaTaskFlag: 1})
   await wait(2000)
   for (let t of res.data.userTaskStatusList) {
     if (t.awardStatus === 2 && t.completedTimes === t.targetTimes) {
@@ -568,27 +641,26 @@ async function task() {
 }
 
 async function makeShareCodes() {
-  res = await api('user/QueryUserInfo', '_cfd_t,bizCode,ddwTaskId,dwEnv,ptag,source,strPgUUNum,strPgtimestamp,strPhoneID,strShareId,strVersion,strZone', {
-    ddwTaskId: '',
-    strShareId: '',
-    strMarkList: 'undefined',
-    strPgUUNum: token.strPgUUNum,
-    strPgtimestamp: token.strPgtimestamp,
-    strPhoneID: token.strPhoneID,
-    strVersion: '1.0.1'
-  })
-  console.log('助力码:', res.strMyShareId)
-  shareCodesSelf.push(res.strMyShareId)
-  let pin: string = cookie.match(/pt_pin=([^;]*)/)![1]
-  pin = Md5.hashStr(pin)
   try {
-    let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/autoInsert/jxcfd?sharecode=${res.strMyShareId}&pin=${pin}`, {timeout: 10000})
-    if (data.code === 200)
-      console.log('已自动提交助力码')
-    else
-      console.log('提交失败！')
+    res = await api('user/QueryUserInfo', '_cfd_t,bizCode,ddwTaskId,dwEnv,ptag,source,strPgUUNum,strPgtimestamp,strPhoneID,strShareId,strVersion,strZone', {
+      ddwTaskId: '',
+      strShareId: '',
+      strMarkList: 'undefined',
+      strPgUUNum: token.strPgUUNum,
+      strPgtimestamp: token.strPgtimestamp,
+      strPhoneID: token.strPhoneID,
+      strVersion: '1.0.1'
+    })
+    console.log('助力码:', res.strMyShareId)
+    shareCodesSelf.push(res.strMyShareId)
+    let bean: string = await getBeanShareCode(cookie)
+    let farm: string = await getFarmShareCode(cookie)
+    let pin: string = Md5.hashStr(cookie.match(/pt_pin=([^;]*)/)![1])
+    let {data}: any = await axios.get(`https://api.jdsharecode.xyz/api/autoInsert/jxcfd?sharecode=${res.strMyShareId}&bean=${bean}&farm=${farm}&pin=${pin}`)
+    console.log(data.message)
   } catch (e) {
-    console.log('自动提交助力码出错')
+    console.log('自动提交失败')
+    console.log(e)
   }
 }
 

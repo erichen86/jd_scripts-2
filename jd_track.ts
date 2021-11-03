@@ -1,31 +1,31 @@
 /**
  * 京东快递更新通知
- * cron: 0-23/2 * * * *
+ * cron: 0 0-23/4 * * *
  */
 
-import axios from "axios";
-import * as path from "path";
-import {sendNotify} from './sendNotify';
-import {accessSync, readFileSync, writeFileSync} from "fs";
-import {requireConfig, exceptCookie, wait} from "./TS_USER_AGENTS";
+import axios from "axios"
+import * as path from "path"
+import {sendNotify} from './sendNotify'
+import {accessSync, readFileSync, writeFileSync} from "fs"
+import {requireConfig, exceptCookie, wait} from "./TS_USER_AGENTS"
 
-let cookie: string = '', UserName: string, index: number, allMessage: string = '', res: any = '', message: string = '';
+let cookie: string = '', UserName: string, index: number, allMessage: string = '', res: any = '', message: string = ''
 
 !(async () => {
-  let cookiesArr: any = await requireConfig();
-  let except: string[] = exceptCookie(path.basename(__filename));
-  let orders: any;
+  let cookiesArr: any = await requireConfig()
+  let except: string[] = exceptCookie(path.basename(__filename))
+  let orders: any
   try {
-    accessSync('./jd_track.json')
-    orders = JSON.parse(readFileSync('./jd_track.json').toString() || '{}')
+    accessSync('./json/jd_track.json')
+    orders = JSON.parse(readFileSync('./json/jd_track.json').toString() || '{}')
   } catch (e) {
     orders = {}
   }
   for (let i = 0; i < cookiesArr.length; i++) {
-    cookie = cookiesArr[i];
+    cookie = cookiesArr[i]
     UserName = decodeURIComponent(cookie.match(/pt_pin=([^;]*)/)![1])
-    index = i + 1;
-    console.log(`\n开始【京东账号${index}】${UserName}\n`);
+    index = i + 1
+    console.log(`\n开始【京东账号${index}】${UserName}\n`)
 
     if (except.includes(encodeURIComponent(UserName))) {
       console.log('已设置跳过')
@@ -35,16 +35,21 @@ let cookie: string = '', UserName: string, index: number, allMessage: string = '
     message = ''
     res = await getOrderList()
     for (let order of res.orderList) {
-      let orderId: string = order['orderId'], title: string = order['productList'][0]['title'], t: string = order['progressInfo']['tip'], status: string = order['progressInfo']['content']
-      if (status.match(/(?=签收|已取走|已暂存)/)) continue
-      console.log(title)
-      console.log('\t', t, status)
-      console.log()
-      if (Object.keys(orders).indexOf(orderId) > -1 && orders[orderId]['status'] !== status) {
-        message += `${title}\n${t}  ${status}\n\n`
-      }
-      orders[orderId] = {
-        title, t, status
+      let orderId: string = order['orderId']
+      let title: string = order['productList'][0]['title']
+      let t: string = order.progressInfo?.tip || null
+      let status: string = order.progressInfo?.content || null
+      if (t && status) {
+        if (status.match(/(?=签收|已取走|已暂存)/)) continue
+        console.log(title)
+        console.log('\t', t, status)
+        console.log()
+        if (Object.keys(orders).indexOf(orderId) > -1 && orders[orderId]['status'] !== status) {
+          message += `${title}\n${t}  ${status}\n\n`
+        }
+        orders[orderId] = {
+          title, t, status
+        }
       }
     }
     if (message) {
@@ -53,13 +58,13 @@ let cookie: string = '', UserName: string, index: number, allMessage: string = '
     }
     await wait(1000)
   }
-  writeFileSync('./jd_track.json', JSON.stringify(orders))
+  writeFileSync('./json/jd_track.json', JSON.stringify(orders))
   if (allMessage)
     await sendNotify('京东快递更新', allMessage)
 })()
 
 async function getOrderList() {
-  let t: number = Date.now();
+  let t: number = Date.now()
   let {data} = await axios.get(`https://wq.jd.com/bases/orderlist/list?order_type=2&start_page=1&last_page=0&page_size=10&callersource=mainorder&t=${t}&sceneval=2&_=${t + 1}&sceneval=2`, {
     headers: {
       'authority': 'wq.jd.com',
